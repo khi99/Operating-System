@@ -37,11 +37,26 @@
  *  ( refer to the ./include/lab2_sync_types.h for front and rear nodes)
  */
 void init_queue() {
-	queue_node *front = malloc(sizeof(queue_node));
-    queue_node *rear = malloc(sizeof(queue_node));
-	front->prev = rear;
-	rear->next = front;
+	front = (queue_node*)malloc(sizeof(queue_node));
+    rear = (queue_node*)malloc(sizeof(queue_node));
+	//rear->prev = front;
+	//sizeof(struct hash_list*);
 
+	/*
+	(queue_node*)sizeof(queue_node);
+	sizeof(struct q_node*);
+
+	queue_node *q = (queue_node*)malloc(sizeof(queue_node));
+	front = q;
+	rear = q;
+	*/
+	queue_node *tmp = (queue_node*)malloc(sizeof(queue_node));
+	//tmp->data = NULL;
+	front->next = NULL;
+	front->prev = tmp;
+	rear->next = tmp;
+	rear->prev = NULL;
+	
 }
 
 /*
@@ -53,11 +68,23 @@ void init_queue() {
 void enqueue(queue_node *new_node) {
 
 	new_node->data = target;
+	//new_node->next = NULL;
+	//new_node->prev = NULL;
 
-	(rear->next)->prev = new_node;
-	new_node->next = rear->next;
-	rear->next = new_node;
-	new_node->prev = rear;
+	if(rear->next->data == 0){ //처음시작해서 큐가 비어있는 상태라면, 초기화할때 동적할당해놓은 tmp노드 해제하고 타겟값을 갖는 노드 추가
+		rear->next = new_node;
+		free(front->prev);
+		front->prev = new_node;
+		new_node->prev = rear;
+		new_node->next = front;
+		}
+	else{ //비어있지않다면 그냥 rear에서 추가
+		rear->next->prev = new_node;
+		new_node->next = rear->next;
+		rear->next = new_node;
+		new_node->prev = rear;
+	}
+	
 
 }
 
@@ -74,10 +101,16 @@ void enqueue_cg(queue_node *new_node) {
 	pthread_mutex_lock(&a);
 	new_node->data = target;
 
-	(rear->next)->prev = new_node;
-	new_node->next = rear->next;
-	rear->next = new_node;
-	new_node->prev = rear;
+	if(hashlist[hash(target)]->next == NULL){
+		rear->next = new_node;
+		new_node->prev = rear;
+	}
+	else{
+		(rear->next)->prev = new_node;
+		new_node->next = rear->next;
+		rear->next = new_node;
+		new_node->prev = rear;
+	}
 	pthread_mutex_unlock(&a);
 }
 
@@ -89,14 +122,24 @@ void enqueue_cg(queue_node *new_node) {
  */
 void enqueue_fg(queue_node *new_node) {
 	
+	
 	new_node->data = target;
 
-	pthread_mutex_lock(&a);
-	(rear->next)->prev = new_node;
-	new_node->next = rear->next;
-	rear->next = new_node;
-	new_node->prev = rear;
-	pthread_mutex_unlock(&a);
+	if(hashlist[hash(target)]->next == NULL){
+		pthread_mutex_lock(&b);
+		rear->next = new_node;
+		new_node->prev = rear;
+		pthread_mutex_unlock(&b);
+	}
+	else{
+		pthread_mutex_lock(&b);
+		(rear->next)->prev = new_node;
+		new_node->next = rear->next;
+		rear->next = new_node;
+		new_node->prev = rear;
+		pthread_mutex_unlock(&b);
+	}
+	
 }
 
 /*
@@ -157,7 +200,24 @@ void dequeue_fg(queue_node *del_node) {
  *  Implement function which init hashlist(same as hashtable) node.
  */
 void init_hlist_node() {
-	/*hlist_node *hashlist[0]= malloc(sizeof(hlist_node));
+
+	for(int i=0; i<sizeof(hashlist)/sizeof(struct hash_list*); i++){
+		hashlist[i] = malloc(sizeof(struct hash_list*));
+	}
+	//sizeof(hlist_node);
+	/*
+	for(int i=0; i<HASH_SIZE; i++){
+		hashlist[i]->next = NULL;
+	}
+	
+
+	for(int i=0; i<sizeof(hashlist)/sizeof(struct hash_list*); i++){
+		hashlist[i]->next = malloc(sizeof(hlist_node));
+	}
+	*/
+
+	/*
+	hlist_node *hashlist[0]= malloc(sizeof(hlist_node));
 	hlist_node *hashlist[1]= malloc(sizeof(hlist_node));
 	hlist_node *hashlist[2]= malloc(sizeof(hlist_node));
 	hlist_node *hashlist[3]= malloc(sizeof(hlist_node));
@@ -171,13 +231,7 @@ void init_hlist_node() {
 	hlist_node *hashlist[11]= malloc(sizeof(hlist_node));
 	hlist_node *hashlist[12]= malloc(sizeof(hlist_node));
 	hlist_node *hashlist[13]= malloc(sizeof(hlist_node));*/
-	for(int i=0; i<sizeof(hashlist)/sizeof(struct hash_list*); i++){
-		hashlist[i] = malloc(sizeof(struct hash_list));
-	}
-
-	for(int i=0; i<HASH_SIZE; i++){
-		hashlist[i]->next = NULL;
-	}
+	
 }
 
 /*
@@ -242,10 +296,19 @@ int value_exist(int val) {
 
 	int bucket_index=hash(val);
 	hlist_node *tmp = hashlist[bucket_index];
-	while(tmp->next == NULL){
-		if(tmp->next->q_loc->data == val){return 1;}
+	if(tmp->next == NULL){ //엔트리가 비어있으면 값이 값이 없음을 바로 알림
+		return 0;
 	}
-	return 0;
+	else{
+		while(tmp->next != NULL){//엔트리를 하나씩 보고 값이 확인되면 있음을 알림, 끝까지 보고 없으면 없음을 알림
+			if(tmp->next->q_loc->data == val)
+				return 1;
+			else
+				tmp = tmp->next;	
+		}
+		return 0;
+	}
+	
 	
 }
 
@@ -265,34 +328,15 @@ void hash_queue_insert_by_target() {
 	queue_node *new_q_node = malloc(sizeof(queue_node));
 
 	if(value_exist(target) == 0){ //넣으려는값이 해시테이블에 없으면
-		enqueue(new_q_node); //큐에 새 노드 삽입
 		//hash_queue_add(hashlist[bucket_index], target);
 		
 		hlist_node *p = hashlist[bucket_index];
 		while(p->next != NULL){p = p->next;} //해시의 해당 인덱스 체인의 끝부분으로 이동
-		//p->next = new_q_node; //해시체인의 next멤버에 새노드위치 할당 
-		p->next->q_loc = new_q_node; //해시체인의 next멤버의 큐노드를 가리키는 멤버에 새노드위치 할당
+		enqueue(new_q_node); //큐에 새 노드 삽입
+		//p->next = new_q_node; //해시체인의 next멤버에 새노드위치 할당
+		p->next = malloc(sizeof(hlist_node));
+		p->next->q_loc = new_q_node; //해시체인의 다음 노드의 큐노드를 가리키는 멤버에 새노드위치 할당
 		p->next->next = NULL; // 해시체인의 마지막의 next는 NULL
-		
-		
-		
-		
-
-		/*
-		if(hashlist[bucket_index]->next == NULL){
-			hashlist[bucket_index]->next = new_q_node;
-			hashlist[bucket_index]->next->q_loc = new_q_node;
-			hashlist[bucket_index]->next->next = NULL; // 해시체인의 마지막의 next는 NULL
-		}
-		else{
-			hlist_node *p = hashlist[bucket_index];
-			p = hashlist[bucket_index];
-			while(p->next != NULL){p = p->next;} //해시의 해당 인덱스 체인의 끝부분으로 이동
-			p->next = new_q_node;
-			p->next->q_loc = new_q_node;
-			p->next->next = NULL; // 해시체인의 마지막의 next는 NULL
-			
-		}*/
 		
 	}
 
@@ -309,11 +353,22 @@ pthread_mutex_t c,d;
 //pthread_mutex_lock(&c);
 //pthread_mutex_unlock(&c);
 void hash_queue_insert_by_target_cg() {
+	
+	pthread_mutex_lock(&c);
+	int bucket_index = hash(target);
+	queue_node *new_q_node = malloc(sizeof(queue_node));
 
-	
-
-	
-	
+	if(value_exist(target) == 0){ //넣으려는값이 해시테이블에 없으면
+		//hash_queue_add(hashlist[bucket_index], target);
+		hlist_node *p = hashlist[bucket_index];
+		while(p->next != NULL){p = p->next;} //해시의 해당 인덱스 체인의 끝부분으로 이동
+		enqueue(new_q_node); //큐에 새 노드 삽입
+		//p->next = new_q_node; //해시체인의 next멤버에 새노드위치 할당
+		p->next = malloc(sizeof(hlist_node));
+		p->next->q_loc = new_q_node; //해시체인의 다음 노드의 큐노드를 가리키는 멤버에 새노드위치 할당
+		p->next->next = NULL; // 해시체인의 마지막의 next는 NULL
+	}
+	pthread_mutex_unlock(&c);
 }
 /*
  * TODO
@@ -321,12 +376,25 @@ void hash_queue_insert_by_target_cg() {
  */
 
 
-
-//pthread_mutex_lock(&d);
-//pthread_mutex_unlock(&d);
 void hash_queue_insert_by_target_fg() {
 	
+	int bucket_index = hash(target);
+	queue_node *new_q_node = malloc(sizeof(queue_node));
 
+	if(value_exist(target) == 0){ //넣으려는값이 해시테이블에 없으면
+		//hash_queue_add(hashlist[bucket_index], target);
+		hlist_node *p = hashlist[bucket_index];
+
+		pthread_mutex_lock(&d);
+		while(p->next != NULL){p = p->next;} //해시의 해당 인덱스 체인의 끝부분으로 이동
+		enqueue(new_q_node); //큐에 새 노드 삽입
+		//p->next = new_q_node; //해시체인의 next멤버에 새노드위치 할당
+		p->next = malloc(sizeof(hlist_node));
+		p->next->q_loc = new_q_node; //해시체인의 다음 노드의 큐노드를 가리키는 멤버에 새노드위치 할당
+		p->next->next = NULL; // 해시체인의 마지막의 next는 NULL
+		pthread_mutex_unlock(&d);
+	}
+	
 }
 
 /*
@@ -346,7 +414,8 @@ void hash_queue_delete_by_target() {
 		hlist_node *del_next = p->next->next; //삭제할 노드(p->next)의 다음 엔트리 노드를 가리키는 포인터(p->next->next) 저장
 		dequeue(p->next->q_loc); //삭제할 노드 큐에서 삭제
 		//dequeue(p->next->q_loc);
-		p->next=p->next->next; //엔트리에서 (삭제한노드의 전 노드)의 다음을 가리키는 포인터를 삭제한노드의 다음노드를 가리키게
+		free(p->next); //해시엔트리에서 매모리 해제
+		p->next=del_next; //엔트리에서 (삭제한노드의 전 노드)의 다음을, 삭제한노드의 다음노드를 가리키게
 
 	}
 
@@ -376,8 +445,18 @@ pthread_mutex_t e,f;
  *  using target and delete node that contains target
  */
 void hash_queue_delete_by_target_cg() {
+
 	pthread_mutex_lock(&e);
-	
+	int bucket_index = hash(target);
+	hlist_node *p = hashlist[bucket_index];
+	if(value_exist(target) == 1) { //삭제하려는값이 해시테이블에 있으면
+
+		while(p->next->q_loc->data != target){p = p->next;} 
+		hlist_node *del_next = p->next->next; //삭제할 노드(p->next)의 다음 엔트리 노드를 가리키는 포인터(p->next->next) 저장
+		dequeue(p->next->q_loc); //삭제할 노드 큐에서 삭제
+		free(p->next); //해시엔트리에서 매모리 해제
+		p->next=del_next; //엔트리에서 (삭제한노드의 전 노드)의 다음을, 삭제한노드의 다음노드를 가리키게
+	}
 	pthread_mutex_unlock(&e);
 }
 
@@ -388,4 +467,29 @@ void hash_queue_delete_by_target_cg() {
  */
 void hash_queue_delete_by_target_fg() {
 
+	int bucket_index = hash(target);
+	hlist_node *p = hashlist[bucket_index];
+	if(value_exist(target) == 1) { //삭제하려는값이 해시테이블에 있으면
+
+		pthread_mutex_lock(&f);
+		while(p->next->q_loc->data != target){p = p->next;} 
+		hlist_node *del_next = p->next->next; //삭제할 노드(p->next)의 다음 엔트리 노드를 가리키는 포인터(p->next->next) 저장
+		dequeue(p->next->q_loc); //삭제할 노드 큐에서 삭제
+		free(p->next); //해시엔트리에서 매모리 해제
+		p->next=del_next; //엔트리에서 (삭제한노드의 전 노드)의 다음을, 삭제한노드의 다음노드를 가리키게
+		pthread_mutex_unlock(&f);
+	}
 }
+/*
+int main(){
+
+	init_hlist_node();
+	init_queue();
+
+	target = 10;
+	hash_queue_insert_by_target();
+
+	
+
+	return 0;
+}*/
